@@ -1,4 +1,4 @@
--- Database Schema DDL for School Hostel & Mess Management System
+-- Database Schema DDL for School Hostel & Mess Management System (Revised)
 -- Database Dialect: PostgreSQL
 
 CREATE TYPE user_role AS ENUM ('SUPER_ADMIN', 'WARDEN', 'GATE_GUARD', 'STUDENT');
@@ -21,11 +21,10 @@ CREATE TABLE users (
 -- Index for username lookup
 CREATE INDEX idx_users_username ON users(username);
 
--- 2. Students Master Table
+-- 2. Students Master Table (student_id is the primary key and must be a 4-digit numeric string)
 CREATE TABLE students (
-    id SERIAL PRIMARY KEY,
+    student_id VARCHAR(4) PRIMARY KEY CHECK (student_id ~ '^\d{4}$'),
     user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL,
-    student_id VARCHAR(50) UNIQUE NOT NULL, -- The academic registry student ID (e.g. STU1001)
     name VARCHAR(100) NOT NULL,
     father_name VARCHAR(100) NOT NULL,
     class_course VARCHAR(100) NOT NULL,
@@ -34,13 +33,10 @@ CREATE TABLE students (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Index for quick search on registry Student ID
-CREATE INDEX idx_students_student_id ON students(student_id);
-
 -- 3. Academic Sessions Master Table
 CREATE TABLE academic_sessions (
     id SERIAL PRIMARY KEY,
-    session_name VARCHAR(20) UNIQUE NOT NULL, -- e.g. "2024-25"
+    session_name VARCHAR(20) UNIQUE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -73,7 +69,7 @@ CREATE TABLE beds (
 -- 7. Allotment History (Tracks actual bed occupancy over time and across sessions)
 CREATE TABLE allotment_history (
     id SERIAL PRIMARY KEY,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_id VARCHAR(4) NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
     bed_id INTEGER NOT NULL REFERENCES beds(id) ON DELETE CASCADE,
     session_id INTEGER NOT NULL REFERENCES academic_sessions(id) ON DELETE CASCADE,
     allotment_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -99,7 +95,7 @@ CREATE INDEX idx_allotment_history_student ON allotment_history(student_id);
 -- 8. Leave Records / Gate Passes
 CREATE TABLE leave_records (
     id SERIAL PRIMARY KEY,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_id VARCHAR(4) NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     reason TEXT NOT NULL,
@@ -116,7 +112,7 @@ CREATE INDEX idx_leave_records_status ON leave_records(status);
 -- 9. Mess Attendance Table (Daily status per student)
 CREATE TABLE mess_attendance (
     id SERIAL PRIMARY KEY,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_id VARCHAR(4) NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
     date DATE NOT NULL,
     status mess_status NOT NULL DEFAULT 'ON',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -129,8 +125,8 @@ CREATE INDEX idx_mess_attendance_student_date ON mess_attendance(student_id, dat
 -- 10. Invoices Table (Monthly Mess & Hostel Bills)
 CREATE TABLE invoices (
     id SERIAL PRIMARY KEY,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    billing_month DATE NOT NULL, -- Represented as the first day of the month (e.g. 2026-07-01)
+    student_id VARCHAR(4) NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    billing_month DATE NOT NULL,
     base_amount NUMERIC(10, 2) NOT NULL DEFAULT 5000.00,
     rebate_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
     status invoice_status NOT NULL DEFAULT 'Unpaid',
@@ -143,12 +139,12 @@ CREATE INDEX idx_invoices_student_month ON invoices(student_id, billing_month);
 -- 11. Complaints and Maintenance Tickets
 CREATE TABLE complaints (
     id SERIAL PRIMARY KEY,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_id VARCHAR(4) NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
     title VARCHAR(150) NOT NULL,
     description TEXT NOT NULL,
-    category VARCHAR(50) NOT NULL, -- e.g. Plumbing, Electrical, Wi-Fi
+    category VARCHAR(50) NOT NULL,
     status complaint_status NOT NULL DEFAULT 'Pending',
-    assigned_to VARCHAR(100), -- Name of worker or technician
+    assigned_to VARCHAR(100),
     resolved_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -158,7 +154,7 @@ CREATE INDEX idx_complaints_status ON complaints(status);
 -- 12. Visitor Management Logs
 CREATE TABLE visitors (
     id SERIAL PRIMARY KEY,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_id VARCHAR(4) NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
     visitor_name VARCHAR(100) NOT NULL,
     relationship VARCHAR(50) NOT NULL,
     contact_number VARCHAR(20) NOT NULL,
@@ -179,7 +175,7 @@ CREATE TABLE student_assets (
     id SERIAL PRIMARY KEY,
     allotment_id INTEGER NOT NULL REFERENCES allotment_history(id) ON DELETE CASCADE,
     asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    serial_no VARCHAR(100), -- Key number, mattress barcode, table identifier
+    serial_no VARCHAR(100),
     condition asset_condition NOT NULL DEFAULT 'Good',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_allotment_asset UNIQUE (allotment_id, asset_id)
