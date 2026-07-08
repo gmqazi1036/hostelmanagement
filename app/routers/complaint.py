@@ -29,7 +29,7 @@ def raise_complaint(complaint_in: schemas.ComplaintCreate, db: Session = Depends
         )
 
     new_complaint = models.Complaint(
-        student_id=student.id,
+        student_id=student.student_id,
         title=complaint_in.title,
         description=complaint_in.description,
         category=complaint_in.category,
@@ -100,6 +100,6 @@ def list_complaints(db: Session = Depends(get_db), current_user: models.User = D
         student = db.query(models.Student).filter(models.Student.user_id == current_user.id).first()
         if not student:
             return []
-        return db.query(models.Complaint).filter(models.Complaint.student_id == student.id).all()
+        return db.query(models.Complaint).filter(models.Complaint.student_id == student.student_id).all()
     else:
         return db.query(models.Complaint).all()
