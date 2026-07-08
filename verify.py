@@ -10,17 +10,17 @@ from fastapi.testclient import TestClient
 # Adjust path to import from app
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.main import app
-from app.database import Base, engine, get_db
-from app import models, auth
-from sqlalchemy.orm import sessionmaker
-
-# Setup test database (SQLite on disk, cleared every run)
+# Setup test database (SQLite on disk, cleared every run) - MUST DO BEFORE IMPORTS
 if os.path.exists("test.db"):
     try:
         os.remove("test.db")
     except PermissionError:
         pass
+
+from app.main import app
+from app.database import Base, engine, get_db
+from app import models, auth
+from sqlalchemy.orm import sessionmaker
 
 Base.metadata.create_all(bind=engine)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -39,7 +39,11 @@ def seed_test_db(db):
     """
     Replicates PostgreSQL DDL seed logic in SQLite for automated testing.
     """
-    print("[TEST SETUP] Seeding hostels, rooms, and beds...")
+    # Check if database was already seeded by the app imports
+    if db.query(models.Hostel).filter(models.Hostel.name == "Azhari Hostel").first():
+        print("[TEST SETUP] Database already seeded by app main auto-loader.")
+        return
+
     # 1. Insert Hostels
     azhari = models.Hostel(name="Azhari Hostel")
     qadri = models.Hostel(name="Qadri Hostel")
