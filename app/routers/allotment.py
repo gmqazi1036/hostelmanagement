@@ -4,6 +4,7 @@ from app.database import get_db
 from app import models, schemas, auth
 import pandas as pd
 import io
+import re
 from datetime import date
 from typing import List
 
@@ -12,7 +13,6 @@ router = APIRouter(
     tags=["Hostel & Bed Allotments"]
 )
 
-# Endpoints are secured for Wardens and Super Admins
 admin_role_dependency = Depends(auth.RoleChecker([models.UserRole.SUPER_ADMIN, models.UserRole.WARDEN]))
 
 @router.post("/import", status_code=status.HTTP_201_CREATED, dependencies=[admin_role_dependency])
@@ -21,7 +21,6 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
     Parses Excel/CSV files, validates schema and room capacity, handles master student mapping,
     creates rooms/beds dynamically, and records active allotments with assets.
     """
-    # 1. Read file into a Pandas DataFrame
     content = file.file.read()
     filename = file.filename.lower()
     
@@ -41,7 +40,7 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
             detail=f"Failed to parse spreadsheet file: {str(e)}"
         )
 
-    # 2. Schema Validation
+    # Schema Validation
     required_cols = [
         "Academic_Session", "Student_ID", "Student_Name", "Father_Name", 
         "Class_Course", "Contact_Number", "Hostel_Name", "Floor_No", "Room_No", "Bed_No"
@@ -53,11 +52,9 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
             detail=f"Missing columns in uploaded sheet: {missing_cols}"
         )
 
-    # Clean data (fill NaN)
     df = df.fillna("")
     
-    # 3. Check for duplicates within the spreadsheet itself
-    # Check 1: Duplicate Bed assignment within same Hostel, Room, Bed in the same Session
+    # Check for duplicates within the spreadsheet itself
     spreadsheet_bed_duplicates = df[df.duplicated(subset=["Academic_Session", "Hostel_Name", "Room_No", "Bed_No"], keep=False)]
     if not spreadsheet_bed_duplicates.empty:
         dupes_info = spreadsheet_bed_duplicates[["Academic_Session", "Hostel_Name", "Room_No", "Bed_No"]].to_dict(orient="records")
@@ -66,7 +63,6 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
             detail=f"Duplicate bed allocations found within the uploaded sheet: {dupes_info}"
         )
 
-    # Check 2: Duplicate Student assignment in the same Session
     spreadsheet_student_duplicates = df[df.duplicated(subset=["Academic_Session", "Student_ID"], keep=False)]
     if not spreadsheet_student_duplicates.empty:
         dupes_info = spreadsheet_student_duplicates[["Academic_Session", "Student_ID"]].to_dict(orient="records")
@@ -77,7 +73,6 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
 
     allotments_created = 0
     
-    # Wrap database insertions in a single transaction (all or nothing)
     try:
         for index, row in df.iterrows():
             session_name = str(row["Academic_Session"]).strip()
@@ -91,9 +86,22 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
             room_no = str(row["Room_No"]).strip()
             bed_no = str(row["Bed_No"]).strip()
 
-            # Skip empty lines
             if not student_code or not session_name or not hostel_name or not room_no or not bed_no:
                 continue
+
+            # CRITICAL check: student_id must be exactly 4 digits numeric only
+            if not re.match(r"^\d{4}$", student_code):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Row {index+2}: Student ID '{student_code}' is invalid. Student ID must be exactly 4 digits numeric only."
+                )
+
+            # CRITICAL check: Qadri Hostel is under construction
+            if hostel_name.lower() == "qadri hostel" or "qadri" in hostel_name.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Row {index+2}: Cannot allocate room in '{hostel_name}'. This hostel is currently under construction."
+                )
 
             # a) Ensure Session master
             db_session = db.query(models.AcademicSession).filter(models.AcademicSession.session_name == session_name).first()
@@ -102,13 +110,10 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
                 db.add(db_session)
                 db.flush()
 
-            # b) Ensure Student master. Map Student_ID to registry.
-            # If new student, create profile and default credentials. If old, link existing profile.
+            # b) Ensure Student master
             db_student = db.query(models.Student).filter(models.Student.student_id == student_code).first()
             if not db_student:
-                # Create a user record for the student login
-                # default username = student_code, default password = student_code123
-                username = student_code.lower()
+                username = student_code
                 user_pwd_hash = auth.hash_password(f"{username}123")
                 db_user = models.User(username=username, password_hash=user_pwd_hash, role=models.UserRole.STUDENT)
                 db.add(db_user)
@@ -126,7 +131,6 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
                 db.add(db_student)
                 db.flush()
             else:
-                # Update student details with latest data from excel
                 db_student.name = student_name
                 db_student.father_name = father_name
                 db_student.class_course = class_course
@@ -156,19 +160,24 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
                 models.Bed.bed_no == bed_no
             ).first()
             if not db_bed:
+                # Check room capacity limit for Azhari Hostel
+                current_beds_count = db.query(models.Bed).filter(models.Bed.room_id == db_room.id).count()
+                if hostel_name.lower() == "azhari hostel" and current_beds_count >= 8:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Row {index+2}: Cannot add Bed '{bed_no}' in Room '{room_no}'. Azhari Hostel has a maximum room capacity of 8 students."
+                    )
                 db_bed = models.Bed(room_id=db_room.id, bed_no=bed_no)
                 db.add(db_bed)
                 db.flush()
 
             # f) Validation check on Database: Bed or Student already active in this session?
-            # Check if this student already has an active allotment for this session
             existing_student_allotment = db.query(models.AllotmentHistory).filter(
-                models.AllotmentHistory.student_id == db_student.id,
+                models.AllotmentHistory.student_id == db_student.student_id,
                 models.AllotmentHistory.session_id == db_session.id,
                 models.AllotmentHistory.vacated_date == None
             ).first()
             
-            # Check if this bed already has an active allotment for this session
             existing_bed_allotment = db.query(models.AllotmentHistory).filter(
                 models.AllotmentHistory.bed_id == db_bed.id,
                 models.AllotmentHistory.session_id == db_session.id,
@@ -189,7 +198,7 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
 
             # g) Create Allotment
             allotment = models.AllotmentHistory(
-                student_id=db_student.id,
+                student_id=db_student.student_id,
                 bed_id=db_bed.id,
                 session_id=db_session.id,
                 allotment_date=date.today()
@@ -197,17 +206,15 @@ def import_excel_allotments(file: UploadFile = File(...), db: Session = Depends(
             db.add(allotment)
             db.flush()
 
-            # h) Assign Default Assets to the allotment (Bed Frame, Mattress, Table, Key No)
+            # h) Assign Default Assets
             default_asset_names = ["Bed Frame", "Mattress", "Study Table", "Room Key"]
             for asset_name in default_asset_names:
-                # Get or create asset
                 asset = db.query(models.Asset).filter(models.Asset.name == asset_name).first()
                 if not asset:
                     asset = models.Asset(name=asset_name)
                     db.add(asset)
                     db.flush()
                 
-                # Assign to student allotment
                 student_asset = models.StudentAsset(
                     allotment_id=allotment.id,
                     asset_id=asset.id,
@@ -238,13 +245,11 @@ def swap_beds(req: schemas.BedSwapRequest, db: Session = Depends(get_db)):
     Bed/Room Swipe Module: Swap/exchange allotments of Student X and Student Y mid-session
     retaining historical records using transaction safety.
     """
-    # 1. Fetch Student X's active allotment
     allotment_x = db.query(models.AllotmentHistory).filter(
         models.AllotmentHistory.student_id == req.student_x_id,
         models.AllotmentHistory.vacated_date == None
     ).first()
 
-    # 2. Fetch Student Y's active allotment
     allotment_y = db.query(models.AllotmentHistory).filter(
         models.AllotmentHistory.student_id == req.student_y_id,
         models.AllotmentHistory.vacated_date == None
@@ -266,27 +271,25 @@ def swap_beds(req: schemas.BedSwapRequest, db: Session = Depends(get_db)):
     today = date.today()
 
     try:
-        # Perform Swap retaining histories:
-        # a) Vacate current allotments
+        # Vacate current allotments
         allotment_x.vacated_date = today
         allotment_y.vacated_date = today
         
-        # Save old bed IDs
         bed_x_id = allotment_x.bed_id
         bed_y_id = allotment_y.bed_id
 
         db.flush()
 
-        # b) Create new active allotments with swapped beds
+        # Create new active allotments with swapped beds
         new_allotment_x = models.AllotmentHistory(
             student_id=req.student_x_id,
-            bed_id=bed_y_id, # X gets Y's bed
+            bed_id=bed_y_id,
             session_id=current_session_id,
             allotment_date=today
         )
         new_allotment_y = models.AllotmentHistory(
             student_id=req.student_y_id,
-            bed_id=bed_x_id, # Y gets X's bed
+            bed_id=bed_x_id,
             session_id=current_session_id,
             allotment_date=today
         )
@@ -295,8 +298,7 @@ def swap_beds(req: schemas.BedSwapRequest, db: Session = Depends(get_db)):
         db.add(new_allotment_y)
         db.flush()
 
-        # Swap assets (optionally we re-assign assets associated with the beds or link to the new allotments)
-        # For simplicity, we just clone or transfer assets to the new allotments
+        # Swap assets
         for asset_x in allotment_x.allocated_assets:
             new_asset = models.StudentAsset(
                 allotment_id=new_allotment_x.id,
@@ -331,7 +333,6 @@ def transfer_to_vacant_room(req: schemas.RoomTransferRequest, db: Session = Depe
     """
     Vacant Room Transfer: Moves Student X to an empty bed in real-time.
     """
-    # 1. Fetch current student's active allotment
     current_allotment = db.query(models.AllotmentHistory).filter(
         models.AllotmentHistory.student_id == req.student_id,
         models.AllotmentHistory.vacated_date == None
@@ -346,7 +347,6 @@ def transfer_to_vacant_room(req: schemas.RoomTransferRequest, db: Session = Depe
     session_id = current_allotment.session_id
     today = date.today()
 
-    # 2. Check if target bed exists
     target_bed = db.query(models.Bed).filter(models.Bed.id == req.target_bed_id).first()
     if not target_bed:
         raise HTTPException(
@@ -354,7 +354,6 @@ def transfer_to_vacant_room(req: schemas.RoomTransferRequest, db: Session = Depe
             detail="Target bed does not exist."
         )
 
-    # 3. Check if target bed is occupied in the current session
     is_occupied = db.query(models.AllotmentHistory).filter(
         models.AllotmentHistory.bed_id == req.target_bed_id,
         models.AllotmentHistory.session_id == session_id,
@@ -368,12 +367,11 @@ def transfer_to_vacant_room(req: schemas.RoomTransferRequest, db: Session = Depe
         )
 
     try:
-        # 4. Perform Transfer
-        # a) Vacate current bed
+        # Vacate current bed
         current_allotment.vacated_date = today
         db.flush()
 
-        # b) Allocate new bed
+        # Allocate new bed
         new_allotment = models.AllotmentHistory(
             student_id=req.student_id,
             bed_id=req.target_bed_id,
@@ -383,7 +381,7 @@ def transfer_to_vacant_room(req: schemas.RoomTransferRequest, db: Session = Depe
         db.add(new_allotment)
         db.flush()
 
-        # c) Assign default assets
+        # Assign default assets
         for old_asset in current_allotment.allocated_assets:
             new_asset = models.StudentAsset(
                 allotment_id=new_allotment.id,
@@ -409,15 +407,11 @@ def get_room_occupancy_and_capacity(db: Session = Depends(get_db)):
     """
     Real-time room occupancy and capacity calculations.
     """
-    # Simple summary of rooms, beds, and occupancy
     rooms = db.query(models.Room).all()
     result = []
 
     for room in rooms:
-        # Total beds in room
         total_beds = len(room.beds)
-        
-        # Occupied beds in room (unvacated allotments)
         occupied_beds = db.query(models.AllotmentHistory).join(models.Bed).filter(
             models.Bed.room_id == room.id,
             models.AllotmentHistory.vacated_date == None
