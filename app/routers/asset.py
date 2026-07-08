@@ -37,7 +37,7 @@ def get_my_allocated_assets(db: Session = Depends(get_db), current_user: models.
 
     # Fetch active allotment
     active_allotment = db.query(models.AllotmentHistory).filter(
-        models.AllotmentHistory.student_id == student.id,
+        models.AllotmentHistory.student_id == student.student_id,
         models.AllotmentHistory.vacated_date == None
     ).first()
 
@@ -61,11 +61,11 @@ def get_my_allocated_assets(db: Session = Depends(get_db), current_user: models.
 
 
 @router.get("/student/{student_id}", response_model=List[schemas.StudentAssetOut], dependencies=[warden_dependency])
-def get_student_assets_by_warden(student_id: int, db: Session = Depends(get_db)):
+def get_student_assets_by_warden(student_id: str, db: Session = Depends(get_db)):
     """
     Get assets allocated to a specific student (Warden only).
     """
-    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    student = db.query(models.Student).filter(models.Student.student_id == student_id).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -74,7 +74,7 @@ def get_student_assets_by_warden(student_id: int, db: Session = Depends(get_db))
 
     # Fetch active allotment
     active_allotment = db.query(models.AllotmentHistory).filter(
-        models.AllotmentHistory.student_id == student.id,
+        models.AllotmentHistory.student_id == student.student_id,
         models.AllotmentHistory.vacated_date == None
     ).first()
 
