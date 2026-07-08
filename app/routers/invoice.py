@@ -31,7 +31,7 @@ def get_my_invoices(db: Session = Depends(get_db), current_user: models.User = D
             detail="Student profile not found."
         )
 
-    return db.query(models.Invoice).filter(models.Invoice.student_id == student.id).order_by(models.Invoice.billing_month.desc()).all()
+    return db.query(models.Invoice).filter(models.Invoice.student_id == student.student_id).order_by(models.Invoice.billing_month.desc()).all()
 
 
 @router.get("", response_model=List[schemas.InvoiceOut], dependencies=[warden_dependency])
