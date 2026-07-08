@@ -58,7 +58,7 @@ def apply_leave(leave_in: schemas.LeaveApply, db: Session = Depends(get_db), cur
             )
 
         new_leave = models.LeaveRecord(
-            student_id=student.id,
+            student_id=student.student_id,
             start_date=leave_in.start_date,
             end_date=leave_in.end_date,
             reason=leave_in.reason,
@@ -191,19 +191,19 @@ def list_leaves(db: Session = Depends(get_db), current_user: models.User = Depen
         student = db.query(models.Student).filter(models.Student.user_id == current_user.id).first()
         if not student:
             return []
-        return db.query(models.LeaveRecord).filter(models.LeaveRecord.student_id == student.id).all()
+        return db.query(models.LeaveRecord).filter(models.LeaveRecord.student_id == student.student_id).all()
     else:
         return db.query(models.LeaveRecord).all()
 
 
 @router.put("/students/{student_id}/status", status_code=status.HTTP_200_OK, dependencies=[warden_dependency])
-def update_student_lifecycle_status(student_id: int, status_val: models.StudentLifecycleStatus, db: Session = Depends(get_db)):
+def update_student_lifecycle_status(student_id: str, status_val: models.StudentLifecycleStatus, db: Session = Depends(get_db)):
     """
     Student Suspension Workflow:
     Updates student status to Suspended, Active, Left, or Graduated.
     If 'Suspended', database triggers will automatically update future daily active mess attendance to 'SUSPENDED'.
     """
-    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    student = db.query(models.Student).filter(models.Student.student_id == student_id).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -220,7 +220,7 @@ def update_student_lifecycle_status(student_id: int, status_val: models.StudentL
             if status_val == models.StudentLifecycleStatus.Suspended:
                 # Update future mess attendance to SUSPENDED in SQLite
                 future_records = db.query(models.MessAttendance).filter(
-                    models.MessAttendance.student_id == student.id,
+                    models.MessAttendance.student_id == student.student_id,
                     models.MessAttendance.date >= today
                 ).all()
                 for record in future_records:
@@ -228,7 +228,7 @@ def update_student_lifecycle_status(student_id: int, status_val: models.StudentL
             elif status_val == models.StudentLifecycleStatus.Active and old_status == models.StudentLifecycleStatus.Suspended:
                 # Restore suspended future mess attendance in SQLite
                 future_records = db.query(models.MessAttendance).filter(
-                    models.MessAttendance.student_id == student.id,
+                    models.MessAttendance.student_id == student.student_id,
                     models.MessAttendance.date >= today,
                     models.MessAttendance.status == models.MessAttendanceStatus.SUSPENDED
                 ).all()
