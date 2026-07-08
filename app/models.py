@@ -56,9 +56,9 @@ class User(Base):
 class Student(Base):
     __tablename__ = "students"
     
-    id = Column(Integer, primary_key=True, index=True)
+    # student_id is the primary key (4-digit numeric only)
+    student_id = Column(String(4), primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), unique=True, nullable=True)
-    student_id = Column(String(50), unique=True, nullable=False, index=True)
     name = Column(String(100), nullable=False)
     father_name = Column(String(100), nullable=False)
     class_course = Column(String(100), nullable=False)
@@ -128,7 +128,7 @@ class AllotmentHistory(Base):
     __tablename__ = "allotment_history"
     
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(String(4), ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     bed_id = Column(Integer, ForeignKey("beds.id", ondelete="CASCADE"), nullable=False)
     session_id = Column(Integer, ForeignKey("academic_sessions.id", ondelete="CASCADE"), nullable=False)
     allotment_date = Column(Date, nullable=False, server_default=func.current_date())
@@ -149,7 +149,7 @@ class LeaveRecord(Base):
     __tablename__ = "leave_records"
     
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(String(4), ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     reason = Column(String, nullable=False)
@@ -169,7 +169,7 @@ class MessAttendance(Base):
     __tablename__ = "mess_attendance"
     
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(String(4), ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False)
     status = Column(SqlEnum(MessAttendanceStatus, name="mess_status", inherit_schema=True), nullable=False, default=MessAttendanceStatus.ON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -183,7 +183,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
     
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(String(4), ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     billing_month = Column(Date, nullable=False) # Represents first day of billing month
     base_amount = Column(Numeric(10, 2), nullable=False, default=5000.00)
     rebate_amount = Column(Numeric(10, 2), nullable=False, default=0.00)
@@ -199,7 +199,7 @@ class Complaint(Base):
     __tablename__ = "complaints"
     
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(String(4), ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     title = Column(String(150), nullable=False)
     description = Column(String, nullable=False)
     category = Column(String(50), nullable=False)
@@ -215,7 +215,7 @@ class Visitor(Base):
     __tablename__ = "visitors"
     
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(String(4), ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     visitor_name = Column(String(100), nullable=False)
     relationship = Column(String(50), nullable=False)
     contact_number = Column(String(20), nullable=False)
