@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, field_validator
 from datetime import date, datetime
 from typing import Optional, List
+import re
 from app.models import UserRole, StudentLifecycleStatus, LeaveRecordStatus, MessAttendanceStatus, InvoicePaymentStatus, ComplaintLifecycleStatus, AssetConditionType
 
 # --- User & Auth Schemas ---
@@ -32,11 +33,18 @@ class UserOut(UserBase):
 
 # --- Student Schemas ---
 class StudentBase(BaseModel):
-    student_id: str
+    student_id: str = Field(..., description="4-digit numeric student ID")
     name: str
     father_name: str
     class_course: str
     contact_number: str
+
+    @field_validator("student_id")
+    @classmethod
+    def validate_student_id(cls, v: str) -> str:
+        if not re.match(r"^\d{4}$", v):
+            raise ValueError("Student ID must be exactly 4 digits numeric only.")
+        return v
 
 class StudentCreate(StudentBase):
     username: Optional[str] = None
@@ -50,7 +58,6 @@ class StudentUpdate(BaseModel):
     status: Optional[StudentLifecycleStatus] = None
 
 class StudentOut(StudentBase):
-    id: int
     status: StudentLifecycleStatus
     user_id: Optional[int]
     created_at: datetime
@@ -60,12 +67,26 @@ class StudentOut(StudentBase):
 
 # --- Allotment & Room Schemas ---
 class BedSwapRequest(BaseModel):
-    student_x_id: int = Field(..., description="ID of student X")
-    student_y_id: int = Field(..., description="ID of student Y")
+    student_x_id: str = Field(..., description="4-digit numeric ID of student X")
+    student_y_id: str = Field(..., description="4-digit numeric ID of student Y")
+
+    @field_validator("student_x_id", "student_y_id")
+    @classmethod
+    def validate_ids(cls, v: str) -> str:
+        if not re.match(r"^\d{4}$", v):
+            raise ValueError("Student ID must be exactly 4 digits numeric only.")
+        return v
 
 class RoomTransferRequest(BaseModel):
-    student_id: int
+    student_id: str = Field(..., description="4-digit numeric student ID")
     target_bed_id: int
+
+    @field_validator("student_id")
+    @classmethod
+    def validate_student_id(cls, v: str) -> str:
+        if not re.match(r"^\d{4}$", v):
+            raise ValueError("Student ID must be exactly 4 digits numeric only.")
+        return v
 
 class AllotmentOut(BaseModel):
     id: int
@@ -91,7 +112,7 @@ class LeaveApprove(BaseModel):
 
 class LeaveOut(BaseModel):
     id: int
-    student_id: int
+    student_id: str
     start_date: date
     end_date: date
     reason: str
@@ -105,11 +126,18 @@ class LeaveOut(BaseModel):
 
 # --- Visitor Schemas ---
 class VisitorCreate(BaseModel):
-    student_id: int
+    student_id: str = Field(..., description="4-digit numeric student ID")
     visitor_name: str
     relationship: str
     contact_number: str
     purpose: Optional[str] = None
+
+    @field_validator("student_id")
+    @classmethod
+    def validate_student_id(cls, v: str) -> str:
+        if not re.match(r"^\d{4}$", v):
+            raise ValueError("Student ID must be exactly 4 digits numeric only.")
+        return v
 
 class VisitorOut(VisitorCreate):
     id: int
@@ -130,7 +158,7 @@ class ComplaintAssign(BaseModel):
 
 class ComplaintOut(BaseModel):
     id: int
-    student_id: int
+    student_id: str
     title: str
     description: str
     category: str
@@ -160,7 +188,7 @@ class StudentAssetOut(BaseModel):
 # --- Invoice Schemas ---
 class InvoiceOut(BaseModel):
     id: int
-    student_id: int
+    student_id: str
     billing_month: date
     base_amount: float
     rebate_amount: float
