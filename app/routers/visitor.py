@@ -21,7 +21,7 @@ def log_visitor_entry(visitor_in: schemas.VisitorCreate, db: Session = Depends(g
     Log incoming parent/visitor details at the gate.
     Triggers a mock notification (push / SMS) to the student.
     """
-    student = db.query(models.Student).filter(models.Student.id == visitor_in.student_id).first()
+    student = db.query(models.Student).filter(models.Student.student_id == visitor_in.student_id).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
