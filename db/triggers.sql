@@ -1,4 +1,4 @@
--- PostgreSQL Trigger Functions and Event Handlers
+-- PostgreSQL Trigger Functions and Event Handlers (Revised)
 -- School Hostel & Mess Management System
 
 -- 1. Prevent Suspended Students from Applying for Leaves
@@ -7,7 +7,7 @@ RETURNS TRIGGER AS $$
 DECLARE
     student_curr_status student_status;
 BEGIN
-    SELECT status INTO student_curr_status FROM students WHERE id = NEW.student_id;
+    SELECT status INTO student_curr_status FROM students WHERE student_id = NEW.student_id;
     IF student_curr_status = 'Suspended' THEN
         RAISE EXCEPTION 'Student is currently Suspended. Gate pass / Leave application is blocked.';
     END IF;
@@ -28,18 +28,15 @@ RETURNS TRIGGER AS $$
 BEGIN
     -- If a student is suspended, freeze their daily active mess attendance from today onwards
     IF NEW.status = 'Suspended' AND OLD.status <> 'Suspended' THEN
-        -- Insert/Update future mess attendance to 'SUSPENDED'
-        -- For simplicity, we upsert future records for the next 30 days as 'SUSPENDED' or update existing future ones.
-        -- We will update existing future records to 'SUSPENDED'
         UPDATE mess_attendance 
         SET status = 'SUSPENDED' 
-        WHERE student_id = NEW.id AND date >= CURRENT_DATE;
+        WHERE student_id = NEW.student_id AND date >= CURRENT_DATE;
         
     -- If a student is re-activated, restore suspended future mess attendance to 'ON'
     ELSIF NEW.status = 'Active' AND OLD.status = 'Suspended' THEN
         UPDATE mess_attendance 
         SET status = 'ON' 
-        WHERE student_id = NEW.id AND date >= CURRENT_DATE AND status = 'SUSPENDED';
+        WHERE student_id = NEW.student_id AND date >= CURRENT_DATE AND status = 'SUSPENDED';
     END IF;
     
     RETURN NEW;
@@ -75,7 +72,7 @@ BEGIN
         END LOOP;
 
         -- Calculate fee rebate and apply to monthly invoices
-        -- We group leave days by calendar month (since a leave can span across months, e.g., July 28 to Aug 3)
+        -- We group leave days by calendar month
         FOR billing_month_start, days_in_month IN 
             SELECT 
                 date_trunc('month', d)::date AS m_start,
@@ -83,9 +80,6 @@ BEGIN
             FROM generate_series(NEW.start_date::timestamp, NEW.end_date::timestamp, '1 day'::interval) d
             GROUP BY date_trunc('month', d)::date
         LOOP
-            -- Check if invoice exists for this student and month
-            -- If it doesn't exist, create it with base amount (default 5000) and computed rebate
-            -- If it exists, update it by adding the computed rebate
             INSERT INTO invoices (student_id, billing_month, base_amount, rebate_amount, status)
             VALUES (
                 NEW.student_id, 
@@ -111,7 +105,6 @@ EXECUTE FUNCTION fn_handle_leave_approval();
 
 
 -- 4. Helper View for Kitchen Inventory / Daily Food Count Calculator
--- Calculates active mess counts per day
 CREATE OR REPLACE VIEW view_daily_meal_count AS
 SELECT 
     date,
